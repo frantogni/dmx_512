@@ -1,0 +1,136 @@
+'****************************************************************
+'*  Name    : DMX512.BAS                                        *
+'*  Author  : Francisco Togni                                   *
+'*  Notice  : Copyright (c) 2012 Safe Creative                  *
+'*  Date    : 07/10/2012                                        *
+'*  Version : 1.0                                               *                                             
+'****************************************************************
+
+
+    define OSC 20               ; PIC 16F628A @20MHz
+
+    include "modedefs.bas"
+
+    TRISA=%00000000             ; Puerto A salidas            
+    TRISB=%00000010             ; RB1 Habilita EUSART RX
+        
+    CMCON = %00000111           ; Comparadores deshabilitados, puerto a digital
+    OPTION_REG = %10000000      ; Asigna prescaler a TMR0, TOCS=0 un incremento/ciclo (TMR0)
+    
+    SERIAL_DATA     VAR PORTA.2
+    SERIAL_CLOCK    VAR PORTB.3
+    
+    DEFINE  LCD_DREG    PORTB
+    DEFINE  LCD_DBIT    4
+    DEFINE  LCD_BITS    4
+    DEFINE  LCD_RSREG   PORTA
+    DEFINE  LCD_RSBIT   0
+    DEFINE  LCD_EREG    PORTA
+    DEFINE  LCD_EBIT    1
+    DEFINE  LCD_LINES   4
+    DEFINE  LCD_COMMANDUS   2000  
+    DEFINE  LCD_DATAUS  50
+    
+    dato        var byte        ; Variable general de lectura de dato recibido/error 
+    cont_can    var word        ; Variable para contar los canales recibidos
+    valor       var byte[50]
+              
+    DATO = 0
+    cont_can = 0
+            
+    SERIAL_DATA  = 0
+    SERIAL_CLOCK = 0
+       
+        SHIFTOUT PORTA.2,PORTB.3,MSBFIRST,[$3F, $00, $00]   ; Red
+        pause 100
+        SHIFTOUT PORTA.2,PORTB.3,MSBFIRST,[$00, $3F, $00]   ; Green
+        pause 100
+        SHIFTOUT PORTA.2,PORTB.3,MSBFIRST,[$00, $00, $3F]   ; Blue
+        pause 100        
+        SHIFTOUT PORTA.2,PORTB.3,MSBFIRST,[$3F, $00, $3F]   ; Magenta
+        pause 100
+        SHIFTOUT PORTA.2,PORTB.3,MSBFIRST,[$3F, $3F, $00]   ; Yellow
+        pause 100
+        SHIFTOUT PORTA.2,PORTB.3,MSBFIRST,[$00, $3F, $3F]   ; Cyan  
+        pause 100
+        SHIFTOUT PORTA.2,PORTB.3,MSBFIRST,[$3F, $3F, $3F]   ; White
+        pause 100
+        SHIFTOUT PORTA.2,PORTB.3,MSBFIRST,[$00, $00, $00]   ; Black / Off
+        pause 100
+    
+Inicio_serial:    
+    TXSTA = %00000100           ; BRGH=1 SYNC=0
+    RCSTA = %10010000           ; CREN=1 RX9=0 SPEN=1
+    SPBRG = %00000100           ; Baud rate 250KHz @ 20MHz Osc. frec.
+    PIE1 = %00100000            ; RCIE = 1
+    ;INTCON = %11000000          ; GIE=1 PEIE=1
+        
+    SERIAL_CLOCK=0
+    PAUSE 1    
+    
+Esperar_break:
+    if PIR1.5=0  THEN Esperar_break     ; Espera dato (USART receive buffer flag)
+    PIR1.5=0
+    if RCSTA.1=1 then                   ; Si hay error de OVERRUN, limpia y regresa al inicio
+       RCSTA.4=0
+       RCSTA.4=1
+       RCSTA.1=1       
+       dato=RCREG
+       dato=RCREG
+       dato=RCREG
+       GOTO Esperar_break
+    ENDIF    
+    if RCSTA.2=0 THEN Esperar_break     ; Si NO hay error de frame, regresa al inicio    
+    dato=RCREG                          ; Si hay error de frame, limpia y continua
+    
+Esperar_start:                           
+    if PIR1.5=0  THEN Esperar_start     ; Espera dato (USART receive buffer flag)
+    PIR1.5=0
+    if RCSTA.2=1 THEN                   ; Si hay error de frame, limpia y regresa 
+        dato=RCREG
+        goto Esperar_break
+    endif
+    dato=RCREG                          ; Lee dato
+    if dato<>0 then Esperar_break       ; Si no es cero, regresa al inicio
+    cont_can=0                          ; Prepara variables
+     
+Esperar_valor:    
+    if PIR1.5=0 THEN Esperar_valor      ; Espera dato (USART receive buffer flag)
+    PIR1.5=0
+    if RCSTA.2=1 THEN                   ; Si hay error de frame, limpia y regresa 
+        dato=RCREG
+        goto Esperar_break
+    ENDIF
+             
+    if (cont_can = 0) then valor[0] = RCREG    
+    if (cont_can = 1) then valor[1] = RCREG
+            
+    IF (cont_can = 2) THEN 
+        VALOR[2] = RCREG
+    ELSE
+        dato = RCREG
+    ENDIF
+         
+    cont_can = cont_can + 1             ; Incrementa contador de canales
+    
+    IF cont_can < 512 then Esperar_valor; Si es menor a 512 (canales) regresa a leer
+    cont_can = 0                        ; Si finalizo lectura, resetea contador
+    PIR1.5=0                            ; Resetea flag de buffer USART
+    
+    LCDOUT $FE,$80,DEC3 valor[0],"  ",DEC3 valor[1]
+    LCDOUT $FE,$C0,DEC3 valor[2]
+
+    
+Envio:
+
+    SHIFTOUT PORTA.2,PORTB.3,1,[VALOR[0],VALOR[1],VALOR[2]]
+
+    goto Esperar_break               ; Regresa a esperar siguiente trama        
+            
+
+   
+
+end
+
+
+  

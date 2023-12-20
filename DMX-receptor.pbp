@@ -1,0 +1,79 @@
+'****************************************************************
+'*  Name    : DMX512.BAS                                        *
+'*  Author  : Francisco Togni                                   *
+'*  Notice  : Copyright (c) 2012 Safe Creative                  *
+'*  Date    : 07/10/2012                                        *
+'*  Version : 1.0                                               *                                             
+'****************************************************************
+
+    define OSC 20               ' PIC 16F628A @20MHz
+
+    TRISA=%00000000         ; Puerto A salidas            
+    TRISB=%00000010         ; RB1 Habilita EUSART RX
+        
+    CMCON = %00000111       ; Comparadores deshabilitados, puerto a digital
+    OPTION_REG = %10000100  ; Asignar prescaler a TMR0, TOCS=0 un incremento/ciclo (TMR0)
+    
+    ON INTERRUPT GOTO interrupcion
+    
+cont_tiem   var byte                  
+valor       var byte[3]
+led         var byte
+
+    
+led_r var portb.2  
+led_v var portb.3
+led_a var portb.4  
+
+Inicio_timer0:
+  cont_tiem = 0             ; Inicializar contador
+  INTCON=0
+  TMR0 = 100                ; Cargar Valor TMR0
+  INTCON = %10100000        ; GIE=1 T0IE=1 T0IF=0
+
+valor[0]=0
+valor[1]=0
+valor[2]=0
+led=0
+  
+main:      
+
+goto main
+
+          
+disable    
+Interrupcion:
+
+    led_r=1 
+    led_v=1 
+    led_a=1
+    
+    cont_tiem=0
+                 
+    for cont_tiem = 0 to 255      
+          if cont_tiem = valor[0] then led_r=0 
+          if cont_tiem = valor[1] then led_v=0
+          if cont_tiem = valor[2] then led_a=0   
+    next cont_tiem
+       
+    cont_tiem = 0 
+    TMR0 = 100          
+    INTCON.5=1        
+    INTCON.2=0
+    
+    if led=0 then valor[0] = valor[0]+1
+    if led=1 then valor[1] = valor[1]+1
+    if led=2 then valor[2] = valor[2]+1
+    
+    if valor[0] = 255 then valor[0] = 0 : led=1
+    if valor[1] = 255 then valor[1] = 0 : led=2
+    if valor[2] = 255 then valor[2] = 0 : led=0
+      
+resume
+enable
+
+
+end
+
+
+  

@@ -1,0 +1,195 @@
+'****************************************************************
+'*  Name    : UNTITLED.BAS                                      *
+'*  Author  : [select VIEW...EDITOR OPTIONS]                    *
+'*  Notice  : Copyright (c) 2012 [select VIEW...EDITOR OPTIONS] *
+'*          : All Rights Reserved                               *
+'*  Date    : 10/12/2012                                        *
+'*  Version : 1.0                                               *
+'*  Notes   :                                                   *
+'*          :                                                   *
+'****************************************************************
+program DMX
+' 
+'  DMX 6 Channel PWM
+'
+'  PIC 16F628A @20MHz 
+'
+'  Mardaso 2008
+'
+
+Const aantalkanalen as byte=6
+Dim ch_count, offset, i, j, adres as Integer
+Dim data as byte[aantalkanalen]
+Dim startcode, nutteloos, brk, led0, led1, led2, led3, led4, led5 as byte
+Dim counter as word
+
+Sub procedure init_usart
+    SPBRG = 0x04
+    TXSTA.BRGH = 1
+
+    TXSTA.SYNC = 0
+    PIE1=0
+    PIE1.RCIE = 1
+    RCSTA.RX9 = 1
+
+    nutteloos=RCREG
+    nutteloos=RCREG
+    nutteloos=RCREG
+
+    RCSTA.CREN = 1
+    RCSTA.SPEN = 1
+    INTCON.PEIE=1
+    INTCON.GIE=1
+End sub
+
+
+sub procedure init_timer0
+  counter = 0            ' Initialize counter
+  INTCON=0
+  TMR0 = 160             ' load value TMR0
+  INTCON.GIE=1
+  INTCON.T0IE=1         ' Enable TMRO interrupt
+  INTCON.T0IF=0
+end sub
+
+
+Sub procedure interrupt
+  if INTCON.T0IF=1 then
+      inc(counter)          ' Increment value of counter on every cycle
+      If counter <= led0 then
+         portb.4 = 1
+      else
+         portb.4 = 0
+      end if
+      If counter <= led1 then
+         portb.6 = 1
+      else
+         portb.6 = 0
+      end if
+      If counter <= led2 then
+         portb.5 = 1
+      else
+         portb.5 = 0
+      end if
+      If counter <= led3 then
+         portb.7 = 1
+      else
+         portb.7 = 0
+      end if
+      If counter <= led4 then
+         porta.1 = 1
+      else
+         porta.1 = 0
+      end if
+      If counter <= led5 then
+         porta.0 = 1
+      else
+         porta.0 = 0
+      end if
+      if counter = 255 then ' if counter is 255, then reset counter
+        counter = 0
+        ' To prevent clitches load the data at the end of the pwm cyclus
+        led0 = data[0]
+        led1 = data[1]
+        led2 = data[2]
+        led3 = data[3]
+        led4 = data[4]
+        led5 = data[5]
+      end if
+      TMR0   = 160          ' load value TMR0
+      INTCON.T0IE=1         ' Enable TMRO interrupt
+      INTCON.T0IF=0
+      portb.3=0
+  end if
+  'Uart interrupt routine
+  if PIR1.RCIF=1 then
+    portb.3=1
+    if (RCSTA.OERR) then
+       RCSTA.SPEN=0
+       RCSTA.SPEN=1
+       nutteloos=RCREG
+       nutteloos=RCREG
+       nutteloos=RCREG
+       ch_count=0
+       brk=0
+    else
+       if (RCSTA.FERR) then
+          nutteloos=RCREG
+          ch_count=0
+          offset=0
+          brk=0xFF
+       else
+          if (brk = 0xFF) then
+             if (ch_count=0) then
+                startcode=RCREG
+             else
+                 if (adres<1)  then
+                    nutteloos = RCREG
+                    for j=0  to aantalkanalen-1
+                        data[i]=0
+                    next j
+                  else
+                     ' ------------------------------ Hier adres controleren en evt. uitlezen
+                     if (ch_count >= adres) and (ch_count < (adres + aantalkanalen)) and (startcode = 0) then
+                        data[offset] = RCREG
+                        offset= offset + 1
+                     else
+                        nutteloos = RCREG
+                     end if
+                    ' ------------------------------
+                 end if
+             end if
+             ch_count = ch_count + 1
+          else
+              nutteloos = RCREG
+              ch_count = 0
+          end if
+       end if
+      end if
+    PIR1.RCIF=0
+    end if
+end sub
+
+
+main:
+  TRISA = 0xF0              ' PORTA is output
+  PORTA = 0x00              ' Initialize PORTA
+  TRISB = 0x02              ' PORTB is output
+  PORTB = 0x00              ' Initialize PORTB
+  CMCON = 0x07              ' comperators off
+  OPTION_REG = $80          ' Assign prescaler to TMR0
+ '
+ ' Option register
+ ' bit <2:0>     | Timer0 prescaler Rate
+ '---------------------------------------
+ '      000      |         1:2
+ '      001      |         1:4
+ '      010      |         1:8
+ '      011      |         1:16
+ '      100      |         1:32
+ '      101      |         1:64
+ '      110      |         1:128
+ '      111      |         1:256
+ '---------------------------------------
+
+  PORTB.0 = 0                 ' Set SN75176 to recieve data
+  PORTB.3 = 1
+  ch_count=0
+  brk=0
+
+  for j=0 to aantalkanalen-1
+     data[j] = 0
+  next j
+
+init_timer0
+init_usart
+
+  counter = 0            ' Initialize counter
+
+  while TRUE
+      adres = 8
+    ' 
+
+   wend
+end.
+

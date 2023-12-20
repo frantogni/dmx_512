@@ -1,0 +1,145 @@
+'****************************************************************
+'*  Name    : DMX512.BAS                                        *
+'*  Author  : Francisco Togni                                   *
+'*  Notice  : Copyright (c) 2012 Safe Creative                  *
+'*  Date    : 07/10/2012                                        *
+'*  Version : 1.0                                               *                                             
+'****************************************************************
+
+    define OSC 20               ; PIC 16F628A @20MHz
+
+    TRISA=%00000000             ; Puerto A salidas            
+    TRISB=%00000010             ; RB1 Habilita EUSART RX
+        
+    CMCON = %00000111           ; Comparadores deshabilitados, puerto a digital
+    OPTION_REG = %10000000      ; Asigna prescaler a TMR0, TOCS=0 un incremento/ciclo (TMR0)
+    
+    SERIAL_DATA     VAR PORTB.2
+    SERIAL_CLOCK    VAR PORTB.3
+    
+    DEFINE  LCD_DREG    PORTB
+    DEFINE  LCD_DBIT    4
+    DEFINE  LCD_BITS    4
+    DEFINE  LCD_RSREG   PORTA
+    DEFINE  LCD_RSBIT   0
+    DEFINE  LCD_EREG    PORTA
+    DEFINE  LCD_EBIT    1
+    DEFINE  LCD_LINES   4
+    DEFINE  LCD_COMMANDUS   2000  
+    DEFINE  LCD_DATAUS  50
+    
+    dato        var byte        ; Variable general de lectura de dato recibido/error 
+    offset      var byte        ; Puntero para array de datos de canales
+    cont_can    var word        ; Variable para contar los canales recibidos
+    direccion   var word        ; Variable para determinar canal inicial               
+    valor       var byte[3]     ; Array de datos para cada canal pwm
+    rojo        var byte
+    verde       var byte
+    azul        var byte
+    contador    var byte
+        
+    
+    offset=0
+    for offset=0 to 3
+    valor[offset] = 0
+    next offset
+    offset=0
+    direccion = 0
+    
+    SERIAL_DATA  = 0
+    SERIAL_CLOCK = 0
+    
+Inicio_serial:    
+    TXSTA = %00000100           ; BRGH=1 SYNC=0 
+    RCSTA = %10010000           ; CREN=1 RX9=0 SPEN=1 
+    SPBRG = %00000100           ; Baud rate 250KHz @ 20MHz Osc. frec.
+    PIE1 = %00100000            ; RCIE = 1
+    
+    PAUSE 500
+    LCDOUT $FE,$80,DEC3 valor[0],"  ",DEC3 valor[1]
+    LCDOUT $FE,$C0,DEC3 valor[2],"   OK"
+    
+    SERIAL_CLOCK=0
+    PAUSE 1    
+
+main:    
+    for contador=0 to 15 step 1
+        SHIFTOUT SERIAL_DATA,SERIAL_CLOCK,1,[valor]
+    next contador
+    contador = 0        
+                               
+    SERIAL_CLOCK=0
+    PAUSE 1
+
+Esperar_break:
+    if PIR1.5=0  THEN Esperar_break     ; Espera dato (USART receive buffer flag)
+    PIR1.5=0
+    if RCSTA.1=1 then                   ; Si hay error de OVERRUN, limpia y regresa al inicio
+       RCSTA.4=0
+       RCSTA.4=1
+       RCSTA.1=1
+       dato=RCREG
+       dato=RCREG
+       dato=RCREG
+       LCDOUT $FE,$C5,"OE"
+       GOTO Esperar_break
+    ENDIF
+    if RCSTA.2=0 THEN Esperar_break     ; Si NO hay error de frame, regresa al inicio    
+    dato=RCREG                          ; Si hay error de frame, limpia y continua
+    
+Esperar_start:                           
+    if PIR1.5=0  THEN Esperar_start     ; Espera dato (USART receive buffer flag)
+    PIR1.5=0
+    if RCSTA.2=1 THEN                   ; Si hay error de frame, limpia y regresa 
+        dato=RCREG
+        LCDOUT $FE,$C5,"FE1"
+        goto Esperar_break
+    endif
+    dato=RCREG                          ; Lee dato
+    if dato<>0 then Esperar_break       ; Si no es cero, regresa al inicio
+    cont_can=0                          ; Prepara variables
+    offset=0
+    for offset=0 to 3
+    valor[offset] = 0
+    next offset
+    offset=0
+     
+Esperar_valor:
+    if PIR1.5=0 THEN Esperar_valor      ; Espera dato (USART receive buffer flag)
+    PIR1.5=0
+    if RCSTA.2=1 THEN                   ; Si hay error de frame, limpia y regresa 
+        dato=RCREG
+        LCDOUT $FE,$C5,"FE2"
+        goto Esperar_break
+    ENDIF
+    if ((cont_can >= direccion) and (cont_can < (direccion + 3))) then
+        valor[offset] = RCREG           ; Compara el contador de canales con direccion
+        offset= offset + 1              ; Guarda dato si coincida, incrementa el puntero
+    else
+        dato = RCREG                    ; Si no coincide, descarta el dato
+    endif    
+    cont_can = cont_can + 1             ; Incrementa contador de canales
+    IF cont_can < 512 then Esperar_valor; Si es menor a 512 (canales) regresa a leer
+    cont_can = 0                        ; Si finalizo lectura, resetea contador
+    PIR1.5=0                            ; Resetea flag de buffer USART
+    LCDOUT $FE,1
+    LCDOUT $FE,$80,DEC3 valor[0],"  ",DEC3 valor[1]
+    LCDOUT $FE,$C0,DEC3 valor[2]
+
+    rojo = valor[0]
+    verde = valor[1]
+    azul = valor[2]
+
+    SERIAL_CLOCK=0
+    PAUSE 1    
+    SHIFTOUT SERIAL_DATA,SERIAL_CLOCK,1,[rojo,verde,azul]
+    SERIAL_CLOCK=0
+    PAUSE 1
+            
+    goto Esperar_break                  ; Regresa a esperar siguiente trama
+   
+
+end
+
+
+  

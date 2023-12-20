@@ -1,0 +1,107 @@
+'****************************************************************
+'*  Name    : DMX512.BAS                                        *
+'*  Author  : Francisco Togni                                   *
+'*  Notice  : Copyright (c) 2012 Safe Creative                  *
+'*  Date    : 07/10/2012                                        *
+'*  Version : 1.0                                               *                                             
+'****************************************************************
+
+    define OSC 20               ; PIC 16F628A @20MHz
+
+    TRISA=%00000000             ; Puerto A salidas            
+    TRISB=%00000010             ; RB1 Habilita EUSART RX
+        
+    CMCON = %00000111           ; Comparadores deshabilitados, puerto a digital
+    OPTION_REG = %10000000      ; Asigna prescaler a TMR0, TOCS=0 un incremento/ciclo (TMR0)
+    
+    ON INTERRUPT GOTO interrupcion  ; Vector de interrupción
+    
+    dato        var byte        ; Variable general de lectura de dato recibido/error 
+    offset      var byte        ; Puntero para array de datos de canales
+    cont_tiem   var byte        ; Variable para lazo de PWM  
+    cont_can    var word        ; Variable para contar los canales recibidos
+    direccion   var word        ; Variable para determinar canal inicial               
+    valor       var byte[3]     ; Array de datos para cada canal pwm
+        
+    led1_r var portb.2          ; Mascaras de puerto
+    led1_v var portb.3
+    led1_a var portb.4
+    
+    direccion = 10              ; Dirección inicial de canal
+    
+Inicio_serial:    
+    TXSTA = %00000100           ; BRGH=1 SYNC=0 
+    RCSTA = %11010000           ; CREN=1 RX9=1 SPEN=1 
+    SPBRG = %00000100           ; Baud rate 250KHz @ 20MHz Osc. frec.
+    PIE1 = %00100000            ; RCIE = 1
+    
+Inicio_timer0:
+    cont_tiem = 0               ; Inicializa contador
+    TMR0 = 150                  ; Cargar Valor TMR0
+    INTCON = %10100000          ; GIE=1 T0IE=1 T0IF=0
+  
+
+Esperar_break:
+    if PIR1.5=0  THEN Esperar_break     ; Espera dato (USART receive buffer flag)
+    if RCSTA.1=1 then                   ; Si hay error de OVERRUN, limpia y regresa al inicio
+       RCSTA.4=0
+       RCSTA.7=0
+       RCSTA.7=1
+       RCSTA.4=1
+       dato=RCREG
+       dato=RCREG
+       dato=RCREG
+       GOTO Esperar_break
+    ENDIF
+    if RCSTA.2=0 THEN Esperar_break     ; Si NO hay error de frame, regresa al inicio    
+    dato=RCREG                          ; Si hay error de frame, limpia y continua
+    
+Esperar_start:                           
+    if PIR1.5=0  THEN Esperar_start     ; Espera dato (USART receive buffer flag)
+    if RCSTA.2=1 THEN                   ; Si hay error de frame, limpia y regresa 
+        dato=RCREG
+        goto Esperar_start
+    endif
+    dato=RCREG                          ; Lee dato
+    if dato<>0 then Esperar_break       ; Si no es cero, regresa al inicio
+    cont_can=0                          ; Prepara variables
+    offset=0
+    for offset=0 to 5
+    valor[offset] = 0
+    next offset
+    offset=0
+     
+Esperar_valor:
+    if PIR1.5=0 THEN Esperar_valor      ; Espera dato (USART receive buffer flag)
+    If RCSTA.2=1 THEN Esperar_start     ; Si hay error de frame, limpia y regresa     
+    if ((cont_can >= direccion) and (cont_can < (direccion + 3))) then
+        valor[offset] = RCREG           ; Compara el contador de canales con direccion
+        offset= offset + 1              ; Guarda dato si coincida, incrementa el puntero
+    else
+        dato = RCREG                    ; Si no coincide, descarta el dato
+    endif    
+    cont_can = cont_can + 1             ; Incrementa contador de canales
+    IF cont_can < 512 then Esperar_valor; Si es menor a 512 (canales) regresa a leer
+    cont_can = 0                        ; Si finalizo lectura, resetea contador
+    PIR1.5=0                            ; Resetea flag de buffer USART        
+    goto Esperar_break                  ; Regresa a esperar siguiente trama
+   
+       
+disable    
+Interrupcion:      
+      for cont_tiem = 0 to 255                      ; En cada ciclo verifica el duty del PWM   
+          if cont_tiem = valor[0] then led1_r = 0   ; Si el valor coincide, apaga salida
+          if cont_tiem = valor[1] then led1_v = 0
+          if cont_tiem = valor[2] then led1_a = 0   
+      next cont_tiem       
+      cont_tiem = 0                                 ; Resetea contador
+      TMR0 = 150                                    ; Carga valor en TMR0         
+      INTCON.2=0                                    ; Limpia flag de interrupción
+      INTCON.5=1                                    ; Habilita interrupcion             
+resume
+enable
+
+end
+
+
+  

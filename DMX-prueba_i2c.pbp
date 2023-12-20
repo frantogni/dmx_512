@@ -1,0 +1,64 @@
+'****************************************************************
+'*  Name    : DMX512.BAS                                        *
+'*  Author  : Francisco Togni                                   *
+'*  Notice  : Copyright (c) 2012 Safe Creative                  *
+'*  Date    : 07/10/2012                                        *
+'*  Version : 1.0                                               *                                             
+'****************************************************************
+
+    define OSC 20               ; PIC 16F628A @20MHz
+
+    TRISA=%00000000             ; Puerto A salidas            
+    TRISB=%00000010             ; RB1 Habilita EUSART RX
+        
+    CMCON = %00000111           ; Comparadores deshabilitados, puerto a digital
+    OPTION_REG = %10000000      ; Asigna prescaler a TMR0, TOCS=0 un incremento/ciclo (TMR0)
+    
+    SERIAL_DATA     VAR PORTB.2
+    SERIAL_CLOCK    VAR PORTB.3
+    
+    DEFINE  LCD_DREG    PORTB
+    DEFINE  LCD_DBIT    4
+    DEFINE  LCD_BITS    4
+    DEFINE  LCD_RSREG   PORTA
+    DEFINE  LCD_RSBIT   0
+    DEFINE  LCD_EREG    PORTA
+    DEFINE  LCD_EBIT    1
+    DEFINE  LCD_LINES   4
+    DEFINE  LCD_COMMANDUS   2000  
+    DEFINE  LCD_DATAUS  50
+    
+    
+    valor       var byte        ; Variable del dato a enviar    
+    contador    var byte
+    offset      var byte
+   
+    valor = 1
+    contador = 0
+    offset = 0
+    
+    SERIAL_CLOCK=0
+    PAUSE 1    
+
+main:    
+    for contador=0 to 15 step 1
+        SHIFTOUT SERIAL_DATA,SERIAL_CLOCK,1,[valor]
+    next contador
+    contador = 0        
+                               
+    SERIAL_CLOCK=0
+    PAUSE 1
+    
+    valor=valor << 1
+    if valor=128 then valor=1
+    lcdout $fe,$80,dec3 valor
+    
+    pause 1000
+           
+    goto main               
+   
+
+end
+
+
+  
